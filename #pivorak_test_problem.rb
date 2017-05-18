@@ -8,8 +8,8 @@ class Admin
   end
 
   def add_route(id, num_s, start, start_date, start_time, finish, finish_time)
-    seat_matrix = Array.new
-    @buses[id]=[start_date, start, finish, start_time, finish_time, num_s, Hash.new, seat_matrix]
+    seat_array = (1..num_s).to_a
+    @buses[id]=[start_date, start, finish, start_time, finish_time, num_s, Hash.new, seat_array]
     return @buses
   end
 
@@ -38,7 +38,46 @@ class Admin
 end
 
 class User
-  def initialize
+  def initialize(username, password,buses,tickets)
+    @username = username
+    @password = password
+    @buses = buses
+    @tickets = tickets
+  end
+
+  def check(city, date)
+    filtered_buses = Hash.new
+    @buses.each do |k,v|
+      if v[0]==date && v[1]==city
+        filtered_buses[k]=v
+      end
+    end
+    return filtered_buses
+  end
+
+  def buy(id,seat)
+    @buses[id][7][@buses[id][7].index(seat)] = "_"
+    @buses[id][6].default=0
+    @buses[id][6][@username.to_sym]+=1
+    @buses[id][5]-=1
+
+    check = false # checks if user had already bought a ticket for this route
+    @tickets[@username.to_sym].each do |k|
+      if k[0]==id
+        check = true
+        k[1]+=1   #add another ticket to the already bought one(s)
+      end
+    end
+    if check == false #if user havent bought ticekts for this route
+        @tickets[@username.to_sym].push([id, 1]) #adds new record of bought tickets
+    end
+
+    return @buses, @tickets
+  end
+
+  def tickets(login)
+
+    return @tickets[login.to_sym]
   end
 end
 
@@ -52,6 +91,12 @@ user = YAML.load_file('user.yml')
 buses = YAML.load_file('buses.yml')
 if buses == false
   buses = Hash.new
+end
+
+#loads the information of purchased tickets of all users
+tickets = YAML.load_file('tickets.yml')
+if tickets == false
+  tickets = Hash.new
 end
 
 
@@ -71,7 +116,7 @@ def show_routes(buses) #helper function to show existing bus routes
   return nil
 end
 
-def continue_fun(cont,buses) #helper function: to check if user wants to continue working
+def continue_fun(cont,buses,tickets) #helper function: to check if user wants to continue working
   while cont !="yes" && cont!="no"
     puts "If you want to continue working enter 'yes', else enter 'no'."
     cont = gets.chomp
@@ -79,7 +124,8 @@ def continue_fun(cont,buses) #helper function: to check if user wants to continu
     if cont == 'yes'
       return 0
     elsif cont == 'no'
-      File.write('buses.yml', buses.to_yaml) #after work done writes the result of all work to the file
+      File.write('buses.yml', buses.to_yaml) #after work done writes the results of all work to the files
+      File.write('tickets.yml', tickets.to_yaml)
       return 1
     else
       puts "Invalid entry"
@@ -115,6 +161,7 @@ when "login"  #case of logining
         puts "Enter 'quit' to quit the application."
 
         admin_entry1 = gets.chomp
+
         puts admin_entry1
 
         case admin_entry1
@@ -178,14 +225,33 @@ when "login"  #case of logining
 
           puts "added"
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
+
         when "update"
           show_routes(buses)
 
-          puts "Enter the id of a bus route to be updated."
-          puts "updated"
+          id = nil
+          while id==nil  #checks if ID is in the buses hash
+            puts "Enter the ID of a bus route to be updated."
+            id1 = gets.chomp.to_sym
+            if buses.key?(id1) == true
+              id = id1
+              if buses[id][6] == {}
+
+                #buses = admin.update(id)
+
+                puts "updated"
+              else
+                puts "You can't update this route because there are tickets being purchased already."
+              end
+            else
+              puts "This ID does not exist."
+            end
+          end
+
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
+
         when "delete"
           show_routes(buses)
 
@@ -195,14 +261,19 @@ when "login"  #case of logining
             id1 = gets.chomp.to_sym
             if buses.key?(id1) == true
               id = id1
+              if buses[id][6] == {}
+                buses = admin.delete(id)
+                puts "deleted"
+              else
+                puts "You can't delete this route because there are tickets being purchased already."
+              end
             else
               puts "This ID does not exist."
             end
           end
-          buses = admin.delete(id)
-          puts "deleted"
+
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
         when "check"
           show_routes(buses)
 
@@ -220,7 +291,7 @@ when "login"  #case of logining
           puts admin.check_sales(id)
           puts "checked"
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
         when "quit"
           puts "Quitting.."
         else
@@ -233,7 +304,7 @@ when "login"  #case of logining
       login = login1
       puts "Welcome user #{login1}"
 
-      #initialize user class
+      user = User.new(login, pass, buses, tickets)
 
       entry = 0
       while entry == 0
@@ -249,16 +320,38 @@ when "login"  #case of logining
         case user_entry1
         when "check"
           show_routes(buses)
-          puts "Enter the city you're interested in:"
-          city = gets.chomp
-          #check if city exists
-          puts "Enter the date you're interested in(in this form DD.MM.YYYY):"
-          date = gets.chomp
-          #check if date exists
 
-          puts "Filtered buses"
+          exists = false #checks if there are city and date that are equal to entered values
+          while exists == false
+            puts "Enter the city you're interested in:"
+            city = gets.chomp
+            puts "Enter the date you're interested in(in this form DD.MM.YYYY):"
+            date = gets.chomp
+
+            buses.each do |k, v|
+              if v[0]==date && v[1]==city
+                exists = true
+              end
+            end
+
+            if exists == true
+              filtered = user.check(city, date)
+              puts "Buses we found for you"
+              show_routes(filtered)
+            else
+              user_entry3 = nil
+              until user_entry3=="yes" || user_entry3=="no"
+                puts "There are no buses from #{city} on #{date}"
+                puts "Do you want to try again?('yes' or 'no')"
+                user_entry3 = gets.chomp
+              end
+              if user_entry3 == "no"
+                break
+              end
+            end
+          end
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
         when "buy"
           show_routes(buses)
 
@@ -268,25 +361,45 @@ when "login"  #case of logining
             id1 = gets.chomp.to_sym
             if buses.key?(id1) == true
               id = id1
+              if buses[id][5]!=0 #checks if there are any seats available on ID bus
+                puts "Seats available" #list of seats available for the ID route
+
+                buses[id][7].each do |el| #prints out list of available seats. 4 per row
+                  if el%4==0
+                    puts el
+                  else
+                    print el," "
+                  end
+                end
+
+                seat = nil
+                until seat.is_a?(Integer) && buses[id][7].include?(seat) do #checks if the     input is integer and if it is available in the seat_array
+                  puts "Choose available seat, and enter it's number."
+                  seat = Integer(gets.chomp) rescue false
+                end
+
+                buses, tickets = user.buy(id, seat)
+
+                puts "You bought seat ##{seat}. Thank you for the purchase."
+              else
+                puts "No seats available on this bus."
+              end
             else
               puts "This ID does not exist."
             end
           end
 
-          puts "Seats available" #list of seats available for the ID route
-          seat = nil
-          until seat.is_a?(Fixnum) do #checks if the input is integer
-            puts "Choose available seat, and enter it's number."
-            seat = gets.chomp
-          end
-          puts "You bought seat ##{seat}. Thank you for the purchase."
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
         when "tickets"
-
           puts "Your tickets"
+          tickets=user.tickets(login)
+
+          tickets.each do |bus|
+              puts "You have #{bus[1]} ticket(s) for the bus #{bus[0]} #{buses[bus[0]][1]} - #{buses[bus[0]][2]} on #{buses[bus[0]][0]} #{buses[bus[0]][3]}-#{buses[bus[0]][4]}"
+          end
           cont = 0
-          entry = continue_fun(cont,buses)
+          entry = continue_fun(cont,buses,tickets)
         when "quit"
           puts "Quitting.."
         else
